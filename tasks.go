@@ -174,10 +174,12 @@ func (t *Task) postImage(channelName string) error {
 }
 
 func (t *Task) postMessage(channelName string) error {
-	userName, err := t.Users.getNamebyID(t.Channels[channelName].Creator)
+	userID := t.Channels[channelName].Creator
+	userName, err := t.Users.getNamebyID(userID)
 	if err != nil {
 		return err
 	}
+	channelID := t.Channels[channelName].ID
 	params := slack.NewPostMessageParameters()
 	if t.UseThread {
 		params.ThreadTimestamp = t.BaseThreadTimestamp
@@ -185,12 +187,12 @@ func (t *Task) postMessage(channelName string) error {
 
 	params.Attachments = []slack.Attachment{
 		slack.Attachment{
-			Text:     fmt.Sprintf("#%s Activity", channelName),
+			Title:    fmt.Sprintf("<#%s|%s>", channelID, channelName),
 			ImageURL: t.UploadedFiles[channelName].Permalink,
 			Fields: []slack.AttachmentField{
 				slack.AttachmentField{
 					Title: "Creator",
-					Value: fmt.Sprintf("@%s", userName),
+					Value: fmt.Sprintf("<@%s|%s>", userID, userName),
 					Short: true,
 				},
 				slack.AttachmentField{
@@ -254,4 +256,3 @@ func (s *Summary) createBarChartImage(width, height int, tmpDirName string) (str
 	}
 	return outputPath, nil
 }
-
