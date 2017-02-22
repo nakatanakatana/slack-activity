@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/nlopes/slack"
 	"time"
+	"fmt"
 )
 
 type TaskFactory struct {
@@ -14,33 +15,36 @@ type TaskFactory struct {
 }
 
 func (f *TaskFactory) setAllChannels(cli *slack.Client) error {
+	errMsg := errFuncMsg("setAllChannels")
 	allChannels, err := cli.GetChannels(false)
 	if err != nil {
-		return err
+		return fmt.Errorf(errMsg, "Get Channels Failed", err)
 	}
 	f.AllChannels = MakeChannels(allChannels)
 	return nil
 }
 
 func (f *TaskFactory) setChannels(cli *slack.Client) error {
+	errMsg := errFuncMsg("setChannels")
 	Channels, err := cli.GetChannels(true)
 	if err != nil {
-		return err
+		return fmt.Errorf(errMsg, "Get Channels Failed", err)
 	}
 	f.Channels = MakeChannels(Channels)
 	return nil
 }
 
 func (f *TaskFactory) setUsers(cli *slack.Client) error {
+	errMsg := errFuncMsg("setUsers")
 	allUsers, err := cli.GetUsers()
 	if err != nil {
-		return err
+		return fmt.Errorf(errMsg, "Get Users Failed", err)
 	}
 	f.Users = MakeUsers(allUsers)
 	return nil
 }
 
-func (f *TaskFactory) NewTask(target, imageTargetChannel string, channelName, excludeChannelName []string, archived, useThread bool) *Task {
+func (f *TaskFactory) NewTask(target, imageTargetChannel ChannelName, channelNames, excludeChannelName []ChannelName, archived, useThread bool) *Task {
 	cli := slack.New(f.Token)
 	timeNow := time.Now()
 	return &Task{
@@ -50,13 +54,13 @@ func (f *TaskFactory) NewTask(target, imageTargetChannel string, channelName, ex
 		f.Channels,
 		f.Users,
 		target,
-		channelName,
+		channelNames,
 		excludeChannelName,
 		archived,
-		map[string]slack.History{},
-		map[string]Summary{},
-		map[string]string{},
-		map[string]slack.File{},
+		map[ChannelName]slack.History{},
+		map[ChannelName]Summary{},
+		map[ChannelName]string{},
+		map[ChannelName]slack.File{},
 		imageTargetChannel,
 		useThread,
 		"",

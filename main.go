@@ -7,31 +7,34 @@ import (
 )
 
 func _main() int {
+	errMsg := errFuncMsg("_main")
+
 	factory := &TaskFactory{}
 	factory.Token = SLACK_TOKEN
+	factory.TaskConcurrency = 10
 	cli := slack.New(factory.Token)
 	var err error
 	err = factory.setChannels(cli)
 	if err != nil {
-		fmt.Print(err)
+		fmt.Printf(errMsg, "setUnArchiveChannelsFailed", err)
 		return 1
 	}
 	err = factory.setAllChannels(cli)
 	if err != nil {
-		fmt.Print(err)
+		fmt.Printf(errMsg, "setAllChannelsFailed", err)
 		return 1
 	}
 	err = factory.setUsers(cli)
 	if err != nil {
-		fmt.Print(err)
+		fmt.Printf(errMsg, "setUsersFailed", err)
 		return 1
 	}
 
 	task := factory.NewTask(
-		"bot_test",
-		"_activity_images",
-		[]string{":all", },
-		[]string{""},
+		"bot-test",
+		"_bot_posts",
+		[]ChannelName{":all", },
+		[]ChannelName{"random", "general", },
 		false,
 		true,
 	)

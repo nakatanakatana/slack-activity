@@ -12,8 +12,10 @@ import (
 	"github.com/gonum/plot/plotutil"
 	"path"
 	"time"
-	"errors"
+	"sync"
 )
+
+type ChannelName string
 
 type Task struct {
 	cli                    *slack.Client
@@ -21,35 +23,37 @@ type Task struct {
 	TaskStartTime          time.Time
 	Channels               Channels
 	Users                  Users
-	PostTarget             string
-	ChannelNames           []string
-	ExcludeChannelNames    []string
+	PostTarget             ChannelName
+	ChannelNames           []ChannelName
+	ExcludeChannelNames    []ChannelName
 	ExcludeArchivedChannel bool
-	Histories              map[string]slack.History
-	Summaries              map[string]Summary
-	FileNames              map[string]string
-	UploadedFiles          map[string]slack.File
-	fileUploadChannel      string
+	Histories              map[ChannelName]slack.History
+	Summaries              map[ChannelName]Summary
+	FileNames              map[ChannelName]string
+	UploadedFiles          map[ChannelName]slack.File
+	fileUploadChannel      ChannelName
 	UseThread              bool
 	BaseThreadTimestamp    string
 }
 
-func (t *Task) getChannelMessages(channelName string) error {
+func (t *Task) getChannelMessages(channelName ChannelName) error {
+	errMsg := errFuncMsg("getChannelMessage")
 	chID, err := t.Channels.getIDbyName(channelName)
 	if err != nil {
-		return fmt.Errorf("Channel:%s is not exists", channelName)
+		return fmt.Errorf(errMsg, fmt.Sprintf("Channel:%s is not exists", channelName), err)
 	}
 	params := slack.NewHistoryParameters()
 	params.Count = 1000
 	history, err := t.cli.GetChannelHistory(chID, params)
 	if err != nil {
-		return fmt.Errorf("getHistoryError, %s", err)
+		return fmt.Errorf(errMsg, fmt.Sprintf("get %s HistoryError", channelName), err)
 	}
 	t.Histories[channelName] = *history
 	return nil
 }
 
-func (t *Task) makeSummary(channelName string) error {
+func (t *Task) makeSummary(channelName ChannelName) error {
+	errMsg := errFuncMsg("makeSummary")
 	latest := time.Time{}
 	messages := t.Histories[channelName].Messages
 	activity := map[string]float64{}
@@ -57,7 +61,7 @@ func (t *Task) makeSummary(channelName string) error {
 	for _, m := range messages {
 		mTime, err := SlackTimestampstrToTime(m.Timestamp)
 		if err != nil {
-			return err
+			return fmt.Errorf(errMsg, "timestamp Parse Error", err)
 		}
 		activity[mTime.Format("2006-01-02")] += 1
 		if oldest.Unix() > mTime.Unix() {
@@ -70,7 +74,7 @@ func (t *Task) makeSummary(channelName string) error {
 	maxTimeStr := t.TaskStartTime.Add(24 * time.Hour).Format("2006-01-02")
 	maxTime, err := time.Parse("2006-01-02", maxTimeStr)
 	if err != nil {
-		return err
+		return fmt.Errorf(errMsg, "create Max date Failed", err)
 	}
 	for ti := oldest; ti.Unix() < maxTime.Unix(); ti = ti.Add(24 * time.Hour) {
 		date := ti.Format("2006-01-02")
@@ -87,69 +91,106 @@ func (t *Task) makeSummary(channelName string) error {
 }
 
 func (t *Task) run() error {
+	errMsg := errFuncMsg("run")
 	var err error
 	targetChannelID, err := t.Channels.getIDbyName(t.PostTarget)
 	if err != nil {
-		return fmt.Errorf("targetChannelNotFound: %s", t.PostTarget)
+		return fmt.Errorf(errMsg, fmt.Sprintf("targetChannelNotFound: %s", t.PostTarget), err)
 	}
 	if t.UseThread {
 		params := slack.NewPostMessageParameters()
-		params.Username = "ChannelActivityCheckBot"
+		params.Username = "channel-activity"
+		params.IconURL = "https://avatars.slack-edge.com/2017-02-21/144176451349_c3cd9d3c4fcda7f4c6a2_72.png"
 		_, thread_ts, err := t.cli.PostMessage(targetChannelID, "ChannelActivityReport", params)
 		if err != nil {
-			return errors.New("baseMessagePostFailed")
+			return fmt.Errorf(errMsg, "baseMessagePostFailed", err)
 		}
 		t.BaseThreadTimestamp = thread_ts
 	}
 	// if ChannelNames is nil or :all, target are all
 	if t.ChannelNames == nil || t.ChannelNames[0] == ":all" {
-		names, err := t.Channels.keys()
-		if err != nil {
-			return err
-		}
+		names := t.Channels.keys()
 		t.ChannelNames = names
 	}
 
-	// distinct channelNames
-	target := map[string]struct{}{}
+	// distinct and exclude channelNames
+	target := map[ChannelName]struct{}{}
 	for _, s := range t.ChannelNames {
 		target[s] = struct{}{}
 	}
-	tmpDirName, err := ioutil.TempDir("", t.TaskStartTime.Format("2006-01-02-"))
-	if err != nil {
-		return fmt.Errorf("mktempDirFailed, %s", err)
-	}
-	defer os.RemoveAll(tmpDirName)
-	for chName := range target {
-		err = t.getChannelMessages(chName)
-		if err != nil {
-			return fmt.Errorf("getMessageError, %s", err)
-		}
-		err = t.makeSummary(chName)
-		if err != nil {
-			return fmt.Errorf("makeSummaryError, %s", err)
-		}
-		s := t.Summaries[chName]
-		fileName, err := s.createBarChartImage(imageWidth, imageHeight, tmpDirName)
-		if err != nil {
-			return fmt.Errorf("createImageError, %s", err)
-		}
-		t.FileNames[chName] = fileName
-		err = t.postImage(chName)
-		if err != nil {
-			return fmt.Errorf("%s", err)
-		}
-		err = t.postMessage(chName)
-		if err != nil {
-			return fmt.Errorf("%s", err)
+	for _, e := range t.ExcludeChannelNames{
+		if _, ok := target[e]; ok{
+			delete(target, e)
 		}
 	}
 
+	tmpDirName, err := ioutil.TempDir("", t.TaskStartTime.Format("2006-01-02-"))
+	if err != nil {
+		return fmt.Errorf(errMsg, "mktempDirFailed", err)
+	}
+	defer os.RemoveAll(tmpDirName)
+	errChan := make(chan error, len(target))
+	semaphore := make(chan int, t.Concurrency)
+	defer close(errChan)
+
+	var wg sync.WaitGroup
+	wg.Add(len(target))
+	for chName := range target {
+		go func(chName ChannelName) {
+			defer wg.Done()
+			semaphore <- 1
+			defer func() { <-semaphore }()
+			fmt.Printf("%s: start\n", chName)
+			end := make(chan int)
+			defer close(end)
+
+			err = t.getChannelMessages(chName)
+			if err != nil {
+				fmt.Printf("%s: %s", chName, err)
+				errChan <- fmt.Errorf(errMsg, "getMessageError", err)
+				return
+			}
+
+			err = t.makeSummary(chName)
+			if err != nil {
+				fmt.Printf("%s: %s", chName, err)
+				errChan <- fmt.Errorf(errMsg, "makeSummaryError", err)
+				return
+			}
+
+			s := t.Summaries[chName]
+			fileName, err := s.createBarChartImage(imageWidth, imageHeight, tmpDirName)
+			if err != nil {
+				fmt.Printf("%s: %s", chName, err)
+				errChan <- fmt.Errorf(errMsg, "createImageError", err)
+				return
+			}
+			t.FileNames[chName] = fileName
+			err = t.postImage(chName)
+			if err != nil {
+				fmt.Printf("%s: %s", chName, err)
+				errChan <- fmt.Errorf(errMsg, "postImageError", err)
+				return
+			}
+
+			err = t.postMessage(chName)
+			if err != nil {
+				fmt.Printf("%s: %s", chName, err)
+				errChan <- fmt.Errorf(errMsg, "postMessageError", err)
+				return
+			}
+
+			errChan <- nil
+		}(chName)
+	}
+	wg.Wait()
+
+	// TODO: add handle when goroutine error
 	return nil
 }
 
-func (t *Task) postImage(channelName string) error {
-	var target string
+func (t *Task) postImage(channelName ChannelName) error {
+	var target ChannelName
 	if t.fileUploadChannel != "" {
 		target = t.fileUploadChannel
 	} else {
@@ -173,11 +214,12 @@ func (t *Task) postImage(channelName string) error {
 	return nil
 }
 
-func (t *Task) postMessage(channelName string) error {
+func (t *Task) postMessage(channelName ChannelName) error {
+	errMsg := errFuncMsg("postMessage")
 	userID := t.Channels[channelName].Creator
 	userName, err := t.Users.getNamebyID(userID)
 	if err != nil {
-		return err
+		return fmt.Errorf(errMsg, "", err)
 	}
 	channelID := t.Channels[channelName].ID
 	params := slack.NewPostMessageParameters()
@@ -203,14 +245,14 @@ func (t *Task) postMessage(channelName string) error {
 			},
 		},
 	}
-	t.cli.PostMessage(t.PostTarget, "", params)
+	t.cli.PostMessage(string(t.PostTarget), "", params)
 
 	return nil
 }
 
 type Summary struct {
 	LatestMessageDate time.Time
-	ChannelName       string
+	ChannelName       ChannelName
 	Activity          map[string]float64
 }
 
@@ -218,6 +260,7 @@ func (s *Summary) createBarChartImage(width, height int, tmpDirName string) (str
 	// x axis = relative date
 	// y axis = activity ( message count )
 
+	errMsg := errFuncMsg("createBarChartImage")
 	keys := make([]string, len(s.Activity))
 	i := 0
 	for k := range s.Activity {
@@ -233,7 +276,7 @@ func (s *Summary) createBarChartImage(width, height int, tmpDirName string) (str
 	dataValues := plotter.Values(values)
 	p, err := plot.New()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf(errMsg, "make Plot Failed", err)
 	}
 	p.Title.Text = fmt.Sprintf("#%s Activity [reported at %s]", s.ChannelName, time.Now().Format("2006-01-02"))
 
@@ -242,7 +285,7 @@ func (s *Summary) createBarChartImage(width, height int, tmpDirName string) (str
 
 	bars, err := plotter.NewBarChart(dataValues, w)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf(errMsg, "bar chart Error", err)
 	}
 	bars.LineStyle.Width = vg.Length(0)
 	bars.Color = plotutil.Color(1)
@@ -252,7 +295,7 @@ func (s *Summary) createBarChartImage(width, height int, tmpDirName string) (str
 
 	outputPath := path.Join(tmpDirName, fmt.Sprintf("%s.png", s.ChannelName))
 	if err := p.Save(vg.Length(width), vg.Length(height), outputPath); err != nil {
-		return "", err
+		return "", fmt.Errorf(errMsg, "save to file failed", err)
 	}
 	return outputPath, nil
 }
