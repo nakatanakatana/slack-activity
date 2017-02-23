@@ -1,18 +1,19 @@
 package main
 
 import (
-	"github.com/nlopes/slack"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"sort"
-	"github.com/gonum/plot/plotter"
-	"github.com/gonum/plot"
-	"github.com/gonum/plot/vg"
-	"github.com/gonum/plot/plotutil"
 	"path"
-	"time"
+	"sort"
 	"sync"
+	"time"
+
+	"github.com/gonum/plot"
+	"github.com/gonum/plot/plotter"
+	"github.com/gonum/plot/plotutil"
+	"github.com/gonum/plot/vg"
+	"github.com/nlopes/slack"
 )
 
 type ChannelName string
@@ -33,6 +34,7 @@ type Task struct {
 	UploadedFiles          map[ChannelName]slack.File
 	fileUploadChannel      ChannelName
 	UseThread              bool
+	AlertThresholdDay      int64
 	BaseThreadTimestamp    string
 }
 
@@ -82,10 +84,14 @@ func (t *Task) makeSummary(channelName ChannelName) error {
 			activity[date] = 0
 		}
 	}
+
+	threshold := t.TaskStartTime.Add(time.Duration(-1*t.AlertThresholdDay) * (24 * time.Hour))
+	alertFlag := threshold.Unix() > latest.Unix()
 	t.Summaries[channelName] = Summary{
 		LatestMessageDate: latest,
 		ChannelName:       channelName,
 		Activity:          activity,
+		doAlert:           alertFlag,
 	}
 	return nil
 }
@@ -101,7 +107,7 @@ func (t *Task) run() error {
 		params := slack.NewPostMessageParameters()
 		params.Username = "channel-activity"
 		params.IconURL = "https://avatars.slack-edge.com/2017-02-21/144176451349_c3cd9d3c4fcda7f4c6a2_72.png"
-		_, thread_ts, err := t.cli.PostMessage(targetChannelID, "ChannelActivityReport", params)
+		_, thread_ts, err := t.cli.PostMessage(targetChannelID, "14日以上メッセージのないチャネルのあらーと", params)
 		if err != nil {
 			return fmt.Errorf(errMsg, "baseMessagePostFailed", err)
 		}
@@ -118,8 +124,8 @@ func (t *Task) run() error {
 	for _, s := range t.ChannelNames {
 		target[s] = struct{}{}
 	}
-	for _, e := range t.ExcludeChannelNames{
-		if _, ok := target[e]; ok{
+	for _, e := range t.ExcludeChannelNames {
+		if _, ok := target[e]; ok {
 			delete(target, e)
 		}
 	}
@@ -159,25 +165,29 @@ func (t *Task) run() error {
 			}
 
 			s := t.Summaries[chName]
-			fileName, err := s.createBarChartImage(imageWidth, imageHeight, tmpDirName)
-			if err != nil {
-				fmt.Printf("%s: %s", chName, err)
-				errChan <- fmt.Errorf(errMsg, "createImageError", err)
-				return
-			}
-			t.FileNames[chName] = fileName
-			err = t.postImage(chName)
-			if err != nil {
-				fmt.Printf("%s: %s", chName, err)
-				errChan <- fmt.Errorf(errMsg, "postImageError", err)
-				return
-			}
+			if s.doAlert {
+				fmt.Printf("%s: doAlert", chName)
+				fileName, err := s.createBarChartImage(imageWidth, imageHeight, tmpDirName)
+				if err != nil {
+					fmt.Printf("%s: %s\n", chName, err)
+					errChan <- fmt.Errorf(errMsg, "createImageError", err)
+					return
+				}
 
-			err = t.postMessage(chName)
-			if err != nil {
-				fmt.Printf("%s: %s", chName, err)
-				errChan <- fmt.Errorf(errMsg, "postMessageError", err)
-				return
+				t.FileNames[chName] = fileName
+				err = t.postImage(chName)
+				if err != nil {
+					fmt.Printf("%s: %s", chName, err)
+					errChan <- fmt.Errorf(errMsg, "postImageError", err)
+					return
+				}
+
+				err = t.postMessage(chName)
+				if err != nil {
+					fmt.Printf("%s: %s", chName, err)
+					errChan <- fmt.Errorf(errMsg, "postMessageError", err)
+					return
+				}
 			}
 
 			errChan <- nil
@@ -254,6 +264,7 @@ type Summary struct {
 	LatestMessageDate time.Time
 	ChannelName       ChannelName
 	Activity          map[string]float64
+	doAlert           bool
 }
 
 func (s *Summary) createBarChartImage(width, height int, tmpDirName string) (string, error) {

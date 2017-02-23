@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/nlopes/slack"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
-	"strconv"
-	"fmt"
+
+	"github.com/nlopes/slack"
 )
 
 func errFuncMsg(funcName string) string {

@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/nlopes/slack"
 	"os"
+
+	"github.com/nlopes/slack"
 )
 
 func _main() int {
@@ -31,12 +32,13 @@ func _main() int {
 	}
 
 	task := factory.NewTask(
-		"bot-test",
-		"_bot_posts",
+		"general",
+		"_bot_post_image",
 		[]ChannelName{":all", },
 		[]ChannelName{"random", "general", },
 		false,
 		true,
+		14,
 	)
 	task.run()
 

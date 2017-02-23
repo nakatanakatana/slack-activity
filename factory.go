@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/nlopes/slack"
-	"time"
 	"fmt"
+	"time"
+
+	"github.com/nlopes/slack"
 )
 
 type TaskFactory struct {
@@ -44,7 +45,7 @@ func (f *TaskFactory) setUsers(cli *slack.Client) error {
 	return nil
 }
 
-func (f *TaskFactory) NewTask(target, imageTargetChannel ChannelName, channelNames, excludeChannelName []ChannelName, archived, useThread bool) *Task {
+func (f *TaskFactory) NewTask(target, imageTargetChannel ChannelName, channelNames, excludeChannelName []ChannelName, archived, useThread bool, threshold int64) *Task {
 	cli := slack.New(f.Token)
 	timeNow := time.Now()
 	return &Task{
@@ -63,6 +64,7 @@ func (f *TaskFactory) NewTask(target, imageTargetChannel ChannelName, channelNam
 		map[ChannelName]slack.File{},
 		imageTargetChannel,
 		useThread,
+		threshold,
 		"",
 
 	}
