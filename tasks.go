@@ -17,14 +17,16 @@ import (
 )
 
 type ChannelName string
+type ChannelID string
 
 type Task struct {
 	cli                    *slack.Client
+	BotSettings            BotSettings
 	Concurrency            int
 	TaskStartTime          time.Time
 	Channels               Channels
 	Users                  Users
-	PostTarget             ChannelName
+	PostTargetID           ChannelID
 	ChannelNames           []ChannelName
 	ExcludeChannelNames    []ChannelName
 	ExcludeArchivedChannel bool
@@ -99,15 +101,13 @@ func (t *Task) makeSummary(channelName ChannelName) error {
 func (t *Task) run() error {
 	errMsg := errFuncMsg("run")
 	var err error
-	targetChannelID, err := t.Channels.getIDbyName(t.PostTarget)
-	if err != nil {
-		return fmt.Errorf(errMsg, fmt.Sprintf("targetChannelNotFound: %s", t.PostTarget), err)
-	}
+
 	if t.UseThread {
 		params := slack.NewPostMessageParameters()
-		params.Username = "channel-activity"
-		params.IconURL = "https://avatars.slack-edge.com/2017-02-21/144176451349_c3cd9d3c4fcda7f4c6a2_72.png"
-		_, thread_ts, err := t.cli.PostMessage(targetChannelID, "14日以上メッセージのないチャネルのあらーと", params)
+		params.Username = t.BotSettings.Name
+		params.IconURL = t.BotSettings.IconURL
+		msg := fmt.Sprintf("$i日以上メッセージのないチャネルのアラート", t.AlertThresholdDay)
+		_, thread_ts, err := t.cli.PostMessage(string(t.PostTargetID), msg, params)
 		if err != nil {
 			return fmt.Errorf(errMsg, "baseMessagePostFailed", err)
 		}
@@ -201,15 +201,18 @@ func (t *Task) run() error {
 
 func (t *Task) postImage(channelName ChannelName) error {
 	var target ChannelName
+	var channelID string
+	var err error
 	if t.fileUploadChannel != "" {
 		target = t.fileUploadChannel
+		channelID, err = t.Channels.getIDbyName(target)
 	} else {
-		target = t.PostTarget
+		channelID = string(t.PostTargetID)
 	}
-	channelID, err := t.Channels.getIDbyName(target)
 	if err != nil {
 		return err
 	}
+
 	fileName := t.FileNames[channelName]
 	params := slack.FileUploadParameters{
 		Title:    fileName,
@@ -233,6 +236,8 @@ func (t *Task) postMessage(channelName ChannelName) error {
 	}
 	channelID := t.Channels[channelName].ID
 	params := slack.NewPostMessageParameters()
+	params.Username = t.BotSettings.Name
+	params.IconURL = t.BotSettings.IconURL
 	if t.UseThread {
 		params.ThreadTimestamp = t.BaseThreadTimestamp
 	}
@@ -255,7 +260,7 @@ func (t *Task) postMessage(channelName ChannelName) error {
 			},
 		},
 	}
-	t.cli.PostMessage(string(t.PostTarget), "", params)
+	t.cli.PostMessage(string(t.PostTargetID), "", params)
 
 	return nil
 }
