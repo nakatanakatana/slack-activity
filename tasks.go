@@ -106,7 +106,7 @@ func (t *Task) run() error {
 		params := slack.NewPostMessageParameters()
 		params.Username = t.BotSettings.Name
 		params.IconURL = t.BotSettings.IconURL
-		msg := fmt.Sprintf("$i日以上メッセージのないチャネルのアラート", t.AlertThresholdDay)
+		msg := fmt.Sprintf("%d 日以上メッセージのないチャネルのアラート", t.AlertThresholdDay)
 		_, thread_ts, err := t.cli.PostMessage(string(t.PostTargetID), msg, params)
 		if err != nil {
 			return fmt.Errorf(errMsg, "baseMessagePostFailed", err)

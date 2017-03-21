@@ -2,34 +2,41 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"strings"
 
 	"github.com/nlopes/slack"
-	"log"
-	"strings"
+	"github.com/robfig/cron"
 )
 
 func _main() int {
 	errMsg := errFuncMsg("_main")
 
 	SlackToken := os.Getenv("SLACK_TOKEN")
-
 	factory := &TaskFactory{}
 	if err := factory.init(SlackToken); err != nil {
 		fmt.Printf(errMsg, "factoryInit Failed", err)
 		return 1
 	}
 
-	//task := factory.NewTask(
-	//	"general",
-	//	"_bot_post_image",
-	//	[]ChannelName{":all", },
-	//	[]ChannelName{"random", "general", },
-	//	false,
-	//	true,
-	//	14,
-	//)
-	//task.run()
+	if cronSchedule != "" {
+		c := cron.New()
+		c.AddFunc(cronSchedule, func() {
+			fmt.Println("start")
+			t := factory.NewTask(
+				"general",
+				"_bot_post_image",
+				[]ChannelName{":all", },
+				[]ChannelName{"random", "general", },
+				false,
+				true,
+				14,
+			)
+			t.run()
+		})
+		c.Start()
+	}
 
 	cli := slack.New(SlackToken)
 	a, _ := cli.AuthTest()
