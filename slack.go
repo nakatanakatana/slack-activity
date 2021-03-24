@@ -27,17 +27,25 @@ func GetAllUnarchivedChannels(api *slack.Client) (channels []slack.Channel, err 
 		Limit:           1000,
 		ExcludeArchived: "true",
 	}
-	result, _, err := api.GetConversations(params)
-	if err != nil {
-		return nil, err
+	channels = make([]slack.Channel, 0)
+	for i := 0; i < 30; i++ {
+		result, cursor, err := api.GetConversations(params)
+		if err != nil {
+			return nil, err
+		}
+		params.Cursor = cursor
+		channels = append(channels, result...)
+		if cursor == "" {
+			break
+		}
 	}
-	return result, nil
+	return channels, nil
 }
 
 func GetChannelHistory(api *slack.Client, id string) (messages []slack.Message, err error) {
 	params := &slack.GetConversationHistoryParameters{
 		ChannelID: id,
-		Limit:     100,
+		Limit:     1000,
 	}
 	result, err := api.GetConversationHistory(params)
 	if err != nil {
