@@ -83,8 +83,9 @@ func isSendAlert(count []slackActivity.MessageCount) bool {
 func getLastMessageTime(count []slackActivity.MessageCount) string {
 	lastMessageTime := fmt.Sprintf("%d日 以上前", maxDate)
 	for i := 0; i < len(count); i++ {
-		if count[i].Count != 0 {
-			lastMessageTime = count[i].Key
+		cur := len(count) - 1 - i
+		if count[cur].Count != 0 {
+			lastMessageTime = count[cur].Key
 			break
 		}
 	}
