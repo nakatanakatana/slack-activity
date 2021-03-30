@@ -15,6 +15,7 @@ const (
 	alertThreshold = 14
 	imageWidth     = 400
 	imageHeight    = 80
+	tmpDir         = "./tmp"
 )
 
 var alertChannelID string
@@ -97,6 +98,13 @@ func postFile(api *slack.Client, channelID string, filePath string) (permalink s
 }
 
 func _main() (code int) {
+	if _, err := os.Stat(tmpDir); err != nil {
+		err := os.MkdirAll(tmpDir, 777)
+		fmt.Println("mkdir", tmpDir, err)
+		if err != nil {
+			return 1
+		}
+	}
 	api := slackActivity.SlackAPI
 	ts, err := postBaseMessage(api, alertChannelID)
 	if err != nil {
@@ -119,7 +127,7 @@ func _main() (code int) {
 			}
 			fmt.Println(result)
 			if isSendAlert(result) {
-				outputPath := path.Join("./tmp", fmt.Sprintf("%s.png", c.Name))
+				outputPath := path.Join(tmpDir, fmt.Sprintf("%s.png", c.Name))
 				if err := slackActivity.GeneratePlot(result, c, imageHeight, imageWidth, outputPath); err != nil {
 					fmt.Println(err)
 					continue
