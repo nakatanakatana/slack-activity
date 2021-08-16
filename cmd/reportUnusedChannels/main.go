@@ -5,23 +5,31 @@ import (
 	"math"
 	"os"
 	"path"
+	"strconv"
 
 	"github.com/nakatanakatana/slack-activity"
 	"github.com/slack-go/slack"
 )
 
 const (
-	maxDate        = 60
-	alertThreshold = 14
-	imageWidth     = 400
-	imageHeight    = 80
-	tmpDir         = "./tmp"
+	maxDate     = 60
+	imageWidth  = 400
+	imageHeight = 80
+	tmpDir      = "./tmp"
 )
 
-var alertChannelID string
-var uploadImageChannelID string
+var (
+	alertThreshold       int
+	alertChannelID       string
+	uploadImageChannelID string
+)
 
 func init() {
+	var err error
+	alertThreshold, err = strconv.Atoi(os.Getenv("ALERT_THREASHOLD"))
+	if err != nil {
+		alertThreshold = 30
+	}
 	alertChannelID = os.Getenv("SLACK_ALERT_CHANNEL")
 	uploadImageChannelID = os.Getenv("SLACK_UPLOAD_IMAGE_CHANNEL")
 }
