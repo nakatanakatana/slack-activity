@@ -1,8 +1,10 @@
-name: Publish Docker image
+name: Publish Docker Image latest
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - main
+      - master
 
 env:
   IMAGE_NAME: slack-activity
@@ -27,3 +29,4 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
