@@ -25,7 +25,7 @@ func createSlackClient(token string) *slack.Client {
 func GetAllUnarchivedChannels(api *slack.Client) (channels []slack.Channel, err error) {
 	params := &slack.GetConversationsParameters{
 		Limit:           1000,
-		ExcludeArchived: "true",
+		ExcludeArchived: true,
 	}
 	channels = make([]slack.Channel, 0)
 	for i := 0; i < 30; i++ {
