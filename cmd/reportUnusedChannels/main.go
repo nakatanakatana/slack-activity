@@ -41,8 +41,11 @@ func postBaseMessage(api *slack.Client, channelID string, alertThreshold int) (s
 	_, timestamp, err := api.PostMessage(channelID,
 		slack.MsgOptionText(fmt.Sprintf("%d日以上メッセージのないチャネルのアラート", alertThreshold), false),
 	)
+	if err != nil {
+		return "", fmt.Errorf("postBaseMessage failed: %w", err)
+	}
 
-	return timestamp, fmt.Errorf("postBaseMessage failed: %w", err)
+	return timestamp, nil
 }
 
 func postAlertMessage(
@@ -171,13 +174,26 @@ func _main() int {
 					continue
 				}
 
-				permalink, err := slackactivity.PostFile(api, uploadImageChannelID, outputPath)
+				params := slack.FileUploadParameters{
+					File:            outputPath,
+					Content:         "",
+					Reader:          nil,
+					Filetype:        "",
+					Filename:        "",
+					Title:           "",
+					InitialComment:  "",
+					Channels:        []string{uploadImageChannelID},
+					ThreadTimestamp: "",
+				}
+
+				resp, err := api.UploadFile(params)
 				if err != nil {
 					log.Println(err)
 
 					continue
 				}
 
+				permalink := resp.Permalink
 				lastMessageTime := getLastMessageTime(result)
 
 				err = postAlertMessage(api, alertChannelID, ts, c, permalink, lastMessageTime)
