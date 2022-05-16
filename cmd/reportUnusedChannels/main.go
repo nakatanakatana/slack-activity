@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"path"
 	"strconv"
 
-	"github.com/nakatanakatana/slack-activity"
+	slackactivity "github.com/nakatanakatana/slack-activity"
 	"github.com/slack-go/slack"
 )
 
@@ -16,47 +17,48 @@ const (
 	imageWidth  = 400
 	imageHeight = 80
 	tmpDir      = "./tmp"
+
+	defaultAlertThreshold = 30
 )
 
-var (
-	alertThreshold       int
-	alertChannelID       string
-	uploadImageChannelID string
-)
+func getCount(api *slack.Client, channelID string) ([]slackactivity.MessageCount, error) {
+	messages, err := slackactivity.GetChannelHistory(api, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("GetChannelHistory failed: %w", err)
+	}
 
-func init() {
-	var err error
-	alertThreshold, err = strconv.Atoi(os.Getenv("ALERT_THREASHOLD"))
+	count, err := slackactivity.CountMessage(messages)
 	if err != nil {
-		alertThreshold = 30
+		return nil, fmt.Errorf("CountMessage failed: %w", err)
 	}
-	alertChannelID = os.Getenv("SLACK_ALERT_CHANNEL")
-	uploadImageChannelID = os.Getenv("SLACK_UPLOAD_IMAGE_CHANNEL")
-}
 
-func getCount(api *slack.Client, channelID string) ([]slackActivity.MessageCount, error) {
-	messages, err := slackActivity.GetChannelHistory(api, channelID)
-	if err != nil {
-		return nil, err
-	}
-	count, err := slackActivity.CountMessage(messages)
-	if err != nil {
-		return nil, err
-	}
 	start := int(math.Max(float64(len(count)-maxDate), 0))
+
 	return count[start:], nil
 }
 
-func postBaseMessage(api *slack.Client, channelID string) (timestamp string, err error) {
-	_, timestamp, err = api.PostMessage(channelID,
+func postBaseMessage(api *slack.Client, channelID string, alertThreshold int) (string, error) {
+	_, timestamp, err := api.PostMessage(channelID,
 		slack.MsgOptionText(fmt.Sprintf("%d日以上メッセージのないチャネルのアラート", alertThreshold), false),
 	)
-	return timestamp, err
+	if err != nil {
+		return "", fmt.Errorf("postBaseMessage failed: %w", err)
+	}
+
+	return timestamp, nil
 }
 
-func postAlertMessage(api *slack.Client, channelID string, timestamp string, channel slack.Channel, imageURL string, lastMessageTime string) error {
+func postAlertMessage(
+	api *slack.Client,
+	channelID string,
+	timestamp string,
+	channel slack.Channel,
+	imageURL string,
+	lastMessageTime string,
+) error {
 	_, _, err := api.PostMessage(channelID,
 		slack.MsgOptionTS(timestamp),
+		//nolint:exhaustruct
 		slack.MsgOptionAttachments(slack.Attachment{
 			Title:    fmt.Sprintf("<#%s>", channel.ID),
 			ImageURL: imageURL,
@@ -74,82 +76,134 @@ func postAlertMessage(api *slack.Client, channelID string, timestamp string, cha
 			},
 		}),
 	)
-	return err
+
+	return fmt.Errorf("PostMessage failed: id=%s, %w", channel.ID, err)
 }
 
-func isSendAlert(count []slackActivity.MessageCount) bool {
+func isSendAlert(count []slackactivity.MessageCount, alertThreshold int) bool {
 	if len(count) >= alertThreshold {
 		for i := 0; i < alertThreshold; i++ {
 			if count[len(count)-1-i].Count != 0 {
 				return false
 			}
 		}
+
 		return true
 	}
+
 	return false
 }
 
-func getLastMessageTime(count []slackActivity.MessageCount) string {
+func getLastMessageTime(count []slackactivity.MessageCount) string {
 	lastMessageTime := fmt.Sprintf("%d日 以上前", maxDate)
+
 	for i := 0; i < len(count); i++ {
 		cur := len(count) - 1 - i
 		if count[cur].Count != 0 {
 			lastMessageTime = count[cur].Key
+
 			break
 		}
 	}
+
 	return lastMessageTime
 }
 
-func postFile(api *slack.Client, channelID string, filePath string) (permalink string, err error) {
-	return slackActivity.PostFile(api, channelID, filePath)
+func parseAlertThreshold() int {
+	alertThreshold, err := strconv.Atoi(os.Getenv("ALERT_THREASHOLD"))
+	if err != nil {
+		return defaultAlertThreshold
+	}
+
+	return alertThreshold
 }
 
-func _main() (code int) {
+//nolint:cyclop,funlen
+func _main() int {
 	if _, err := os.Stat(tmpDir); err != nil {
-		err := os.MkdirAll(tmpDir, 777)
-		fmt.Println("mkdir", tmpDir, err)
+		err := os.MkdirAll(tmpDir, os.ModePerm)
+		log.Println("mkdir", tmpDir, err)
+
 		if err != nil {
 			return 1
 		}
 	}
-	api := slackActivity.SlackAPI
-	ts, err := postBaseMessage(api, alertChannelID)
+
+	alertThreshold := parseAlertThreshold()
+	alertChannelID := os.Getenv("SLACK_ALERT_CHANNEL")
+	uploadImageChannelID := os.Getenv("SLACK_UPLOAD_IMAGE_CHANNEL")
+
+	token := os.Getenv("SLACK_TOKEN")
+	api := slack.New(token)
+
+	ts, err := postBaseMessage(api, alertChannelID, alertThreshold)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
+
 		return 1
 	}
-	channels, err := slackActivity.GetAllUnarchivedChannels(api)
+
+	channels, err := slackactivity.GetAllUnarchivedChannels(api)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
+
 		return 1
 	}
-	fmt.Println("targetChannels", len(channels))
+
+	log.Println("targetChannels", len(channels))
+
 	for _, c := range channels {
+		//nolint:nestif
 		if c.IsChannel && !c.IsArchived {
-			fmt.Println(c.Name)
+			log.Println(c.Name)
+
 			result, err := getCount(api, c.ID)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
+
 				continue
 			}
-			fmt.Println(result)
-			if isSendAlert(result) {
+
+			log.Println(result)
+
+			if isSendAlert(result, alertThreshold) {
 				outputPath := path.Join(tmpDir, fmt.Sprintf("%s.png", c.Name))
-				if err := slackActivity.GeneratePlot(result, c, imageHeight, imageWidth, outputPath); err != nil {
-					fmt.Println(err)
+				if err := slackactivity.GeneratePlot(result, c, imageHeight, imageWidth, outputPath); err != nil {
+					log.Println(err)
+
 					continue
 				}
-				permalink, err := postFile(api, uploadImageChannelID, outputPath)
+
+				params := slack.FileUploadParameters{
+					File:            outputPath,
+					Content:         "",
+					Reader:          nil,
+					Filetype:        "",
+					Filename:        "",
+					Title:           "",
+					InitialComment:  "",
+					Channels:        []string{uploadImageChannelID},
+					ThreadTimestamp: "",
+				}
+
+				resp, err := api.UploadFile(params)
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
+
 					continue
 				}
+
+				permalink := resp.Permalink
 				lastMessageTime := getLastMessageTime(result)
-				postAlertMessage(api, alertChannelID, ts, c, permalink, lastMessageTime)
+
+				err = postAlertMessage(api, alertChannelID, ts, c, permalink, lastMessageTime)
+				if err != nil {
+					log.Println(err)
+				}
 			}
 		}
 	}
+
 	return 0
 }
 

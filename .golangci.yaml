@@ -1,0 +1,31 @@
+linters:
+  run:
+    go: "1.17"
+  disable:
+    - exhaustivestruct
+    - gochecknoglobals
+
+    # deprecated
+    - scopelint
+    - maligned
+    - golint
+    - interfacer
+    - varnamelen
+  presets:
+    - bugs
+    # - comment
+    - unused
+    - complexity
+    - error
+    - format
+    - import
+    # - metalinter
+    - module
+    - performance
+    # - sql
+    - style
+    - test
+
+linters-settings:
+  stylecheck:
+    checks: ["all", "-ST1005"]

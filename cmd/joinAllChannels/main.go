@@ -1,27 +1,33 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 
-	"github.com/nakatanakatana/slack-activity"
+	slackactivity "github.com/nakatanakatana/slack-activity"
+	"github.com/slack-go/slack"
 )
 
-func _main() (code int) {
-	api := slackActivity.SlackAPI
-	channels, err := slackActivity.GetAllUnarchivedChannels(api)
+func _main() int {
+	token := os.Getenv("SLACK_TOKEN")
+	api := slack.New(token)
+
+	channels, err := slackactivity.GetAllUnarchivedChannels(api)
 	if err != nil {
 		return 1
 	}
-	fmt.Println("allChannelsLen", len(channels))
+
+	log.Println("allChannelsLen", len(channels))
+
 	for _, c := range channels {
 		if c.IsChannel && !c.IsArchived && !c.IsMember {
 			_, _, _, err := api.JoinConversation(c.ID)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			}
 		}
 	}
+
 	return 0
 }
 
