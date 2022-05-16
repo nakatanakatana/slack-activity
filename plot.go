@@ -1,6 +1,7 @@
-package slackActivity
+package slackactivity
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/slack-go/slack"
@@ -10,25 +11,36 @@ import (
 	"gonum.org/v1/plot/vg"
 )
 
-func GeneratePlot(counts []MessageCount, channel slack.Channel, imageHeight int, imageWidth int, outputPath string) error {
+func GeneratePlot(
+	counts []MessageCount,
+	channel slack.Channel,
+	imageHeight int,
+	imageWidth int,
+	outputPath string,
+) error {
 	values := make(plotter.Values, len(counts))
 	for i, r := range counts {
 		values[i] = float64(r.Count)
 	}
+
 	p := plot.New()
 	p.Title.Text = channel.Name + " [reported at " + time.Now().Format("2006/01/02") + " ]"
 	barwidth := float64(imageWidth / len(counts))
 	w := vg.Points(barwidth)
+
 	bars, err := plotter.NewBarChart(values, w)
 	if err != nil {
-		return err
+		return fmt.Errorf("NewBarChart failed: %w", err)
 	}
+
 	bars.LineStyle.Width = vg.Length(0)
 	bars.Color = plotutil.Color(1)
 	bars.XMin = float64(-1 * len(counts))
 	p.Add(bars)
+
 	if err := p.Save(vg.Length(imageWidth), vg.Length(imageHeight), outputPath); err != nil {
-		return err
+		return fmt.Errorf("plot.Save failed: %w", err)
 	}
+
 	return nil
 }

@@ -1,4 +1,5 @@
-package slackActivity
+//nolint
+package slackactivity
 
 import (
 	"bytes"
