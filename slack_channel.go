@@ -12,7 +12,9 @@ const (
 )
 
 type SlackGetChannelsClient interface {
-	GetConversations(params *slack.GetConversationsParameters) (channels []slack.Channel, nextCursor string, err error)
+	GetConversations(
+		params *slack.GetConversationsParameters,
+	) (channels []slack.Channel, nextCursor string, err error)
 }
 
 var _ SlackGetChannelsClient = &slack.Client{}
