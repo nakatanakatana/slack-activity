@@ -61,7 +61,6 @@ func postAlertMessage(
 ) error {
 	_, _, err := api.PostMessage(channelID,
 		slack.MsgOptionTS(timestamp),
-		//nolint:exhaustruct
 		slack.MsgOptionAttachments(slack.Attachment{
 			Title:    fmt.Sprintf("<#%s>", channel.ID),
 			ImageURL: imageURL,

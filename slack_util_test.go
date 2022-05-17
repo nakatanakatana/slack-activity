@@ -11,7 +11,6 @@ import (
 )
 
 func createTestMessages() []slack.Message {
-	//nolint:exhaustruct
 	return []slack.Message{
 		// oldest is 2022/05/10
 		{Msg: slack.Msg{Timestamp: "1652693435.024849"}},

@@ -4,6 +4,7 @@ linters:
   disable:
     - exhaustivestruct
     - gochecknoglobals
+    - exhaustruct
 
     # deprecated
     - scopelint
