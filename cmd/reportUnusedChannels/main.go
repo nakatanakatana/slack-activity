@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"time"
 
 	slackactivity "github.com/nakatanakatana/slack-activity"
 	"github.com/slack-go/slack"
@@ -27,7 +28,9 @@ func getCount(api *slack.Client, channelID string) ([]slackactivity.MessageCount
 		return nil, fmt.Errorf("GetChannelHistory failed: %w", err)
 	}
 
-	count, err := slackactivity.CountMessage(messages)
+	now := time.Now()
+
+	count, err := slackactivity.CountMessage(messages, now)
 	if err != nil {
 		return nil, fmt.Errorf("CountMessage failed: %w", err)
 	}

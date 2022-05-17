@@ -27,7 +27,7 @@ type MessageCount struct {
 
 var ErrNoMessages = errors.New("no messages")
 
-func CountMessage(message []slack.Message) ([]MessageCount, error) {
+func CountMessage(message []slack.Message, latest time.Time) ([]MessageCount, error) {
 	filtered := FilterMessage(message, IgnoreMessageSubType)
 	if len(filtered) == 0 {
 		return nil, ErrNoMessages
@@ -39,7 +39,7 @@ func CountMessage(message []slack.Message) ([]MessageCount, error) {
 	}
 
 	oldestDate := time.Date(oldestTime.Year(), oldestTime.Month(), oldestTime.Day(), 0, 0, 0, 0, oldestTime.Location())
-	dateNum := int(math.Ceil(time.Since(oldestDate).Hours() / hoursPerDay))
+	dateNum := int(math.Ceil(latest.Sub(oldestDate).Hours() / hoursPerDay))
 	result := make([]MessageCount, dateNum)
 
 	for i := 0; i < dateNum; i++ {
