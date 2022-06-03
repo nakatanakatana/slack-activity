@@ -1,6 +1,8 @@
 package slackactivity
 
 import (
+	"fmt"
+
 	"github.com/slack-go/slack"
 )
 
@@ -15,3 +17,26 @@ type SlackPostClient interface {
 }
 
 var _ SlackPostClient = &slack.Client{}
+
+func CreatePostReportMessageAttachements(
+	channel slack.Channel,
+	imageURL string,
+	lastMessageTime string,
+) slack.Attachment {
+	return slack.Attachment{
+		Title:    fmt.Sprintf("<#%s>", channel.ID),
+		ImageURL: imageURL,
+		Fields: []slack.AttachmentField{
+			{
+				Title: "Creator",
+				Value: fmt.Sprintf("<@%s>", channel.Creator),
+				Short: true,
+			},
+			{
+				Title: "LastMessageTime",
+				Value: lastMessageTime,
+				Short: true,
+			},
+		},
+	}
+}
