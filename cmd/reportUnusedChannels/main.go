@@ -22,25 +22,39 @@ const (
 	defaultAlertThreshold = 30
 )
 
-func getCount(api *slack.Client, channelID string) ([]slackactivity.MessageCount, error) {
-	messages, err := slackactivity.GetChannelHistory(api, channelID)
+func parseAlertThreshold() int {
+	alertThreshold, err := strconv.Atoi(os.Getenv("ALERT_THREASHOLD"))
 	if err != nil {
-		return nil, fmt.Errorf("GetChannelHistory failed: %w", err)
+		return defaultAlertThreshold
 	}
 
-	now := time.Now()
-
-	count, err := slackactivity.CountMessage(messages, now)
-	if err != nil {
-		return nil, fmt.Errorf("CountMessage failed: %w", err)
-	}
-
-	start := int(math.Max(float64(len(count)-maxDate), 0))
-
-	return count[start:], nil
+	return alertThreshold
 }
 
-func postBaseMessage(api *slack.Client, channelID string, alertThreshold int) (string, error) {
+type config struct {
+	alertThreshold       int
+	alertChannelID       string
+	uploadImageChannelID string
+	api                  *slack.Client
+}
+
+func createConfig() config {
+	alertThreshold := parseAlertThreshold()
+	alertChannelID := os.Getenv("SLACK_ALERT_CHANNEL")
+	uploadImageChannelID := os.Getenv("SLACK_UPLOAD_IMAGE_CHANNEL")
+
+	token := os.Getenv("SLACK_TOKEN")
+	api := slack.New(token)
+
+	return config{
+		alertThreshold:       alertThreshold,
+		alertChannelID:       alertChannelID,
+		uploadImageChannelID: uploadImageChannelID,
+		api:                  api,
+	}
+}
+
+func postBaseMessage(api slackactivity.SlackPostClient, channelID string, alertThreshold int) (string, error) {
 	_, timestamp, err := api.PostMessage(channelID,
 		slack.MsgOptionText(fmt.Sprintf("%d日以上メッセージのないチャネルのアラート", alertThreshold), false),
 	)
@@ -52,7 +66,7 @@ func postBaseMessage(api *slack.Client, channelID string, alertThreshold int) (s
 }
 
 func postAlertMessage(
-	api *slack.Client,
+	api slackactivity.SlackPostClient,
 	channelID string,
 	timestamp string,
 	channel slack.Channel,
@@ -96,6 +110,28 @@ func isSendAlert(count []slackactivity.MessageCount, alertThreshold int) bool {
 	return false
 }
 
+func getMessageCount(
+	api slackactivity.SlackChannelHistoryClient,
+	channelID string,
+	maxDate int,
+) ([]slackactivity.MessageCount, error) {
+	messages, err := slackactivity.GetChannelHistory(api, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("GetChannelHistory failed: %w", err)
+	}
+
+	now := time.Now()
+
+	count, err := slackactivity.CountMessage(messages, now)
+	if err != nil {
+		return nil, fmt.Errorf("CountMessage failed: %w", err)
+	}
+
+	start := int(math.Max(float64(len(count)-maxDate), 0))
+
+	return count[start:], nil
+}
+
 func getLastMessageTime(count []slackactivity.MessageCount) string {
 	lastMessageTime := fmt.Sprintf("%d日 以上前", maxDate)
 
@@ -111,15 +147,6 @@ func getLastMessageTime(count []slackactivity.MessageCount) string {
 	return lastMessageTime
 }
 
-func parseAlertThreshold() int {
-	alertThreshold, err := strconv.Atoi(os.Getenv("ALERT_THREASHOLD"))
-	if err != nil {
-		return defaultAlertThreshold
-	}
-
-	return alertThreshold
-}
-
 //nolint:cyclop,funlen
 func _main() int {
 	if _, err := os.Stat(tmpDir); err != nil {
@@ -131,21 +158,16 @@ func _main() int {
 		}
 	}
 
-	alertThreshold := parseAlertThreshold()
-	alertChannelID := os.Getenv("SLACK_ALERT_CHANNEL")
-	uploadImageChannelID := os.Getenv("SLACK_UPLOAD_IMAGE_CHANNEL")
+	cfg := createConfig()
 
-	token := os.Getenv("SLACK_TOKEN")
-	api := slack.New(token)
-
-	ts, err := postBaseMessage(api, alertChannelID, alertThreshold)
+	ts, err := postBaseMessage(cfg.api, cfg.alertChannelID, cfg.alertThreshold)
 	if err != nil {
 		log.Println(err)
 
 		return 1
 	}
 
-	channels, err := slackactivity.GetAllUnarchivedChannels(api)
+	channels, err := slackactivity.GetAllUnarchivedChannels(cfg.api)
 	if err != nil {
 		log.Println(err)
 
@@ -155,54 +177,55 @@ func _main() int {
 	log.Println("targetChannels", len(channels))
 
 	for _, c := range channels {
-		//nolint:nestif
-		if c.IsChannel && !c.IsArchived {
-			log.Println(c.Name)
+		if !c.IsChannel || c.IsArchived {
+			continue
+		}
 
-			result, err := getCount(api, c.ID)
-			if err != nil {
-				log.Println(err)
+		log.Println(c.Name)
 
-				continue
-			}
+		messageCount, err := getMessageCount(cfg.api, c.ID, maxDate)
+		if err != nil {
+			log.Println(err)
 
-			log.Println(result)
+			continue
+		}
 
-			if isSendAlert(result, alertThreshold) {
-				outputPath := path.Join(tmpDir, fmt.Sprintf("%s.png", c.Name))
-				if err := slackactivity.GeneratePlot(result, c, imageHeight, imageWidth, outputPath); err != nil {
-					log.Println(err)
+		if !isSendAlert(messageCount, cfg.alertThreshold) {
+			continue
+		}
 
-					continue
-				}
+		outputPath := path.Join(tmpDir, fmt.Sprintf("%s.png", c.Name))
+		if err := slackactivity.GeneratePlot(messageCount, c, imageHeight, imageWidth, outputPath); err != nil {
+			log.Println(err)
 
-				params := slack.FileUploadParameters{
-					File:            outputPath,
-					Content:         "",
-					Reader:          nil,
-					Filetype:        "",
-					Filename:        "",
-					Title:           "",
-					InitialComment:  "",
-					Channels:        []string{uploadImageChannelID},
-					ThreadTimestamp: "",
-				}
+			continue
+		}
 
-				resp, err := api.UploadFile(params)
-				if err != nil {
-					log.Println(err)
+		params := slack.FileUploadParameters{
+			File:     outputPath,
+			Channels: []string{cfg.uploadImageChannelID},
+		}
 
-					continue
-				}
+		resp, err := cfg.api.UploadFile(params)
+		if err != nil {
+			log.Println(err)
 
-				permalink := resp.Permalink
-				lastMessageTime := getLastMessageTime(result)
+			continue
+		}
 
-				err = postAlertMessage(api, alertChannelID, ts, c, permalink, lastMessageTime)
-				if err != nil {
-					log.Println(err)
-				}
-			}
+		permalink := resp.Permalink
+		lastMessageTime := getLastMessageTime(messageCount)
+
+		err = postAlertMessage(
+			cfg.api,
+			cfg.alertChannelID,
+			ts,
+			c,
+			permalink,
+			lastMessageTime,
+		)
+		if err != nil {
+			log.Println(err)
 		}
 	}
 
