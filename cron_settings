@@ -1,3 +1,3 @@
-*/5 * * * * sh -c "/joinAllChannels"
-0 11 * * MON sh -c "/reportUnusedChannels > reportUnusedChannels.log"
+*/5 * * * * sh -c "/apps/joinAllChannels"
+0 11 * * MON sh -c "/apps/reportUnusedChannels > reportUnusedChannels.log"
 
