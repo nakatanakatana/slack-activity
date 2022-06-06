@@ -3,6 +3,7 @@ module github.com/nakatanakatana/slack-activity
 go 1.18
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/slack-go/slack v0.10.3
 	gonum.org/v1/plot v0.11.0
 	gotest.tools/v3 v3.2.0
