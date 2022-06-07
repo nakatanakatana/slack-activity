@@ -5,9 +5,9 @@ import (
 	"math"
 	"os"
 	"path"
-	"strconv"
 	"time"
 
+	"github.com/kelseyhightower/envconfig"
 	slackactivity "github.com/nakatanakatana/slack-activity"
 	"github.com/slack-go/slack"
 )
@@ -15,66 +15,30 @@ import (
 const (
 	imageWidth  = 400
 	imageHeight = 80
-
-	defaultTmpDir         = "./tmp"
-	defaultMaxDate        = 60
-	defaultAlertThreshold = 30
 )
 
 type Config struct {
-	alertThreshold       int
-	alertChannelID       string
-	uploadImageChannelID string
-	maxDate              int
-	tmpDir               string
+	AlertThreshold          int    `split_words:"true" default:"30"`
+	SlackAlertChannel       string `split_words:"true"`
+	SlackUploadImageChannel string `split_words:"true"`
+	MaxDate                 int    `split_words:"true" default:"60"`
+	TmpDir                  string `split_words:"true" default:"./tmp"`
 }
 
-func parseTmpDir() string {
-	tmpDir := os.Getenv("TMP_DIR")
-	if tmpDir == "" {
-		return defaultTmpDir
-	}
+func CreateConfig() (*Config, error) {
+	var c Config
 
-	return tmpDir
-}
-
-func parseAlertThreshold() int {
-	alertThreshold, err := strconv.Atoi(os.Getenv("ALERT_THREASHOLD"))
+	err := envconfig.Process("", &c)
 	if err != nil {
-		return defaultAlertThreshold
+		return nil, fmt.Errorf("envconfig.Process fail: %w", err)
 	}
 
-	return alertThreshold
+	return &c, nil
 }
 
-func parseMaxDate() int {
-	maxDate, err := strconv.Atoi(os.Getenv("MAX_DATE"))
-	if err != nil {
-		return defaultMaxDate
-	}
-
-	return maxDate
-}
-
-func CreateConfig() Config {
-	alertThreshold := parseAlertThreshold()
-	maxDate := parseMaxDate()
-	alertChannelID := os.Getenv("SLACK_ALERT_CHANNEL")
-	uploadImageChannelID := os.Getenv("SLACK_UPLOAD_IMAGE_CHANNEL")
-	tmpDir := parseTmpDir()
-
-	return Config{
-		alertThreshold:       alertThreshold,
-		alertChannelID:       alertChannelID,
-		uploadImageChannelID: uploadImageChannelID,
-		maxDate:              maxDate,
-		tmpDir:               tmpDir,
-	}
-}
-
-func CreateTmpDir(cfg Config) error {
-	if _, err := os.Stat(cfg.tmpDir); err != nil {
-		err := os.MkdirAll(cfg.tmpDir, os.ModePerm)
+func CreateTmpDir(cfg *Config) error {
+	if _, err := os.Stat(cfg.TmpDir); err != nil {
+		err := os.MkdirAll(cfg.TmpDir, os.ModePerm)
 		if err != nil {
 			return fmt.Errorf("mkdir error:%w", err)
 		}
@@ -83,16 +47,16 @@ func CreateTmpDir(cfg Config) error {
 	return nil
 }
 
-func CreateSlackClient(cfg Config) *slack.Client {
+func CreateSlackClient(cfg *Config) *slack.Client {
 	token := os.Getenv("SLACK_TOKEN")
 
 	return slack.New(token)
 }
 
-func PostBaseMessage(api slackactivity.SlackPostClient, cfg Config) (string, error) {
-	_, timestamp, err := api.PostMessage(cfg.alertChannelID,
+func PostBaseMessage(api slackactivity.SlackPostClient, cfg *Config) (string, error) {
+	_, timestamp, err := api.PostMessage(cfg.SlackAlertChannel,
 		slack.MsgOptionText(
-			fmt.Sprintf("%d日以上メッセージのないチャネルのアラート", cfg.alertThreshold),
+			fmt.Sprintf("%d日以上メッセージのないチャネルのアラート", cfg.AlertThreshold),
 			false,
 		),
 	)
@@ -177,7 +141,7 @@ func GetLastMessageTime(count []slackactivity.MessageCount, maxDate int) string 
 
 func SendChannelReport(
 	channel slack.Channel,
-	cfg Config,
+	cfg *Config,
 	ts string,
 	historyClient slackactivity.SlackChannelHistoryClient,
 	postClient slackactivity.SlackPostClient,
@@ -186,23 +150,23 @@ func SendChannelReport(
 		return nil
 	}
 
-	messageCount, err := GetMessageCount(historyClient, channel.ID, cfg.maxDate)
+	messageCount, err := GetMessageCount(historyClient, channel.ID, cfg.MaxDate)
 	if err != nil {
 		return err
 	}
 
-	if !isSendAlert(messageCount, cfg.alertThreshold) {
+	if !isSendAlert(messageCount, cfg.AlertThreshold) {
 		return nil
 	}
 
-	outputPath := path.Join(cfg.tmpDir, fmt.Sprintf("%s.png", channel.Name))
+	outputPath := path.Join(cfg.TmpDir, fmt.Sprintf("%s.png", channel.Name))
 	if err := slackactivity.GeneratePlot(messageCount, channel, imageHeight, imageWidth, outputPath); err != nil {
 		return fmt.Errorf("GeneratePlot error: %w", err)
 	}
 
 	params := slack.FileUploadParameters{
 		File:     outputPath,
-		Channels: []string{cfg.uploadImageChannelID},
+		Channels: []string{cfg.SlackUploadImageChannel},
 	}
 
 	resp, err := postClient.UploadFile(params)
@@ -211,11 +175,11 @@ func SendChannelReport(
 	}
 
 	permalink := resp.Permalink
-	lastMessageTime := GetLastMessageTime(messageCount, cfg.maxDate)
+	lastMessageTime := GetLastMessageTime(messageCount, cfg.MaxDate)
 
 	err = PostReportMessage(
 		postClient,
-		cfg.alertChannelID,
+		cfg.SlackAlertChannel,
 		ts,
 		channel,
 		permalink,

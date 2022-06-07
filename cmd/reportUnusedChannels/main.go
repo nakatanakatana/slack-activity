@@ -25,9 +25,14 @@ const (
 
 //nolint:funlen
 func _main() int {
-	cfg := report.CreateConfig()
+	cfg, err := report.CreateConfig()
+	if err != nil {
+		log.Println(err)
 
-	err := report.CreateTmpDir(cfg)
+		return 1
+	}
+
+	err = report.CreateTmpDir(cfg)
 	if err != nil {
 		log.Println(err)
 
