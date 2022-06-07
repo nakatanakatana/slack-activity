@@ -18,7 +18,10 @@ type conversationsMock struct {
 
 var _ slackactivity.SlackGetChannelsClient = conversationsMock{}
 
-var ErrMock = errors.New("mock error")
+var (
+	ErrMock                        = errors.New("mock error")
+	ErrGetConversationInfoNotFound = errors.New("GetConversationInfo:not found")
+)
 
 func (m conversationsMock) GetConversations(
 	params *slack.GetConversationsParameters,
@@ -44,6 +47,14 @@ func (m conversationsMock) GetConversations(
 	default:
 		return []slack.Channel{}, "", fmt.Errorf("unknown: %w", ErrMock)
 	}
+}
+
+func (m conversationsMock) GetConversationInfo(channelID string, includeLocale bool) (*slack.Channel, error) {
+	if len(m.channels) == 0 {
+		return nil, ErrGetConversationInfoNotFound
+	}
+
+	return &m.channels[0], nil
 }
 
 func newConversationsMock(length int) conversationsMock {

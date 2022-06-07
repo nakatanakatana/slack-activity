@@ -15,6 +15,8 @@ type SlackGetChannelsClient interface {
 	GetConversations(
 		params *slack.GetConversationsParameters,
 	) (channels []slack.Channel, nextCursor string, err error)
+
+	GetConversationInfo(channelID string, includeLocale bool) (*slack.Channel, error)
 }
 
 var _ SlackGetChannelsClient = &slack.Client{}

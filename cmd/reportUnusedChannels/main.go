@@ -86,7 +86,7 @@ func _main() int {
 
 				log.Println("start:", c.Name)
 
-				err := report.SendChannelReport(c, cfg, ts, api, api)
+				err := report.SendChannelReport(c, cfg, cfg.SlackAlertChannel, ts, api, api)
 				if err != nil {
 					return fmt.Errorf("SendChannelReport fail: %s, %w", c.Name, err)
 				}

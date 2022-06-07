@@ -69,20 +69,24 @@ func PostBaseMessage(api slackactivity.SlackPostClient, cfg *Config) (string, er
 
 func PostReportMessage(
 	api slackactivity.SlackPostClient,
-	channelID string,
+	reportChannelID string,
 	timestamp string,
-	channel slack.Channel,
+	targetChannel slack.Channel,
 	imageURL string,
 	lastMessageTime string,
 ) error {
-	attachment := slackactivity.CreatePostReportMessageAttachements(channel, imageURL, lastMessageTime)
+	attachment := slackactivity.CreatePostReportMessageAttachements(
+		targetChannel,
+		imageURL,
+		lastMessageTime,
+	)
 
-	_, _, err := api.PostMessage(channelID,
+	_, _, err := api.PostMessage(reportChannelID,
 		slack.MsgOptionTS(timestamp),
 		slack.MsgOptionAttachments(attachment),
 	)
 	if err != nil {
-		return fmt.Errorf("PostMessage failed: id=%s, %w", channel.ID, err)
+		return fmt.Errorf("PostMessage failed: id=%s, %w", targetChannel.ID, err)
 	}
 
 	return nil
@@ -142,6 +146,7 @@ func GetLastMessageTime(count []slackactivity.MessageCount, maxDate int) string 
 func SendChannelReport(
 	channel slack.Channel,
 	cfg *Config,
+	reportChannelID string,
 	ts string,
 	historyClient slackactivity.SlackChannelHistoryClient,
 	postClient slackactivity.SlackPostClient,
@@ -179,7 +184,7 @@ func SendChannelReport(
 
 	err = PostReportMessage(
 		postClient,
-		cfg.SlackAlertChannel,
+		reportChannelID,
 		ts,
 		channel,
 		permalink,
