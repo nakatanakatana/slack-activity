@@ -11,7 +11,7 @@ import (
 	"github.com/slack-go/slack/slackevents"
 )
 
-//nolint:funlen,cyclop
+//nolint:funlen,cyclop,gocognit
 func createEventHandlerFunc(
 	channelCli slackactivity.SlackGetChannelsClient,
 	postCli slackactivity.SlackPostClient,
@@ -65,26 +65,31 @@ func createEventHandlerFunc(
 			// see: https://api.slack.com/events/workflow_step_execute
 			case *slackevents.AppMentionEvent:
 				log.Printf("%#v\n", ev)
-				channelIDs := GetChannelIDs(ev.Text)
 
-				for _, channelID := range channelIDs {
-					targetChannel, err := channelCli.GetConversationInfo(channelID, false)
-					if err != nil {
-						log.Println("getChannelInfo fail:", err)
+				go func() {
+					channelIDs := GetChannelIDs(ev.Text)
+					for _, channelID := range channelIDs {
+						targetChannel, err := channelCli.GetConversationInfo(channelID, false)
+						if err != nil {
+							log.Println("getChannelInfo fail:", err)
 
-						continue
+							continue
+						}
+
+						log.Printf("%#v\n", targetChannel)
+
+						err = report.SendChannelReport(*targetChannel, cfg, ev.Channel, ev.ThreadTimeStamp, historyCli, postCli)
+						if err != nil {
+							log.Println("SendChannelReport fail:", err)
+
+							continue
+						}
 					}
+				}()
 
-					log.Printf("%#v\n", targetChannel)
+				w.WriteHeader(http.StatusOK)
 
-					err = report.SendChannelReport(*targetChannel, cfg, ev.Channel, ev.ThreadTimeStamp, historyCli, postCli)
-					if err != nil {
-						log.Println("SendChannelReport fail:", err)
-
-						continue
-					}
-				}
-
+				return
 			default:
 				w.WriteHeader(http.StatusBadRequest)
 				log.Printf("[WARN] unknown inner event type: %s", eventsAPIEvent.InnerEvent.Type)
